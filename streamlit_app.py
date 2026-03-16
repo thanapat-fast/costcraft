@@ -59,7 +59,7 @@ with tab1:
         st.info("ยังไม่มีข้อมูลการผลิตในระบบ")
 
 # -----------------------
-# TAB 2: INVENTORY
+# TAB 2: INVENTORY (พิมพ์อย่างเดียว)
 # -----------------------
 with tab2:
     st.header("📦 คลังวัตถุดิบ")
@@ -68,9 +68,11 @@ with tab2:
     with st.expander("➕ เพิ่มวัตถุดิบใหม่"):
         with st.form("add_inv_form"):
             n = st.text_input("ชื่อวัตถุดิบ")
-            s = st.number_input("ปริมาณเริ่มต้น", min_value=0.0, value=100.0)
+            # ใช้ step=None เพื่อเอาปุ่มเพิ่มลดออก
+            s = st.number_input("ปริมาณเริ่มต้น", min_value=0.0, step=None, value=100.0)
             u = st.text_input("หน่วย", value="g")
-            p = st.number_input("ราคาต่อหน่วย", format="%.4f")
+            p = st.number_input("ราคาต่อหน่วย", format="%.4f", step=None)
+            
             if st.form_submit_button("บันทึก"):
                 if n:
                     new_item = pd.DataFrame([{"name":n, "stock":s, "unit":u, "price":p}])
@@ -78,7 +80,7 @@ with tab2:
                     st.rerun()
 
 # -----------------------
-# TAB 3: RECIPES (แก้ไขจุดที่พิมพ์ตัวเลขไม่ได้)
+# TAB 3: RECIPES (พิมพ์อย่างเดียวในตาราง)
 # -----------------------
 with tab3:
     st.header("🍪 จัดการสูตรอาหาร")
@@ -90,58 +92,49 @@ with tab3:
     st.divider()
     st.subheader("➕ สร้างสูตรใหม่")
     
-    new_menu_name = st.text_input("ชื่อเมนูใหม่", placeholder="ระบุชื่อเมนูที่นี่")
-    
+    new_menu_name = st.text_input("ชื่อเมนูใหม่")
     available_ing = st.session_state.inventory["name"].tolist()
     
-    # แก้ไข: ใช้ DataFrame ที่มีโครงสร้างพร้อมรับตัวเลข
-    df_empty = pd.DataFrame(columns=["วัตถุดิบ", "ปริมาณ (g)"])
+    df_empty = pd.DataFrame([{"วัตถุดิบ": None, "ปริมาณ (g)": 1.0}])
 
     edited_recipe = st.data_editor(
         df_empty,
         num_rows="dynamic",
         column_config={
-            "วัตถุดิบ": st.column_config.SelectboxColumn(
-                "เลือกวัตถุดิบ", 
-                options=available_ing, 
-                required=True
-            ),
+            "วัตถุดิบ": st.column_config.SelectboxColumn("เลือกวัตถุดิบ", options=available_ing),
             "ปริมาณ (g)": st.column_config.NumberColumn(
                 "ปริมาณ", 
                 min_value=0.01,
-                value=1.0,  # ค่าเริ่มต้นเมื่อกดเพิ่มแถวคือ 1.0 ไม่ใช่ 0
                 format="%.2f",
-                step=0.1,
-                required=True
+                step=None  # เอาปุ่มเพิ่มลดในตารางออก
             )
         },
         use_container_width=True,
-        key="recipe_editor_v2"
+        key="recipe_editor_final_clean"
     )
 
     if st.button("💾 บันทึกสูตรอาหาร"):
         if not new_menu_name:
             st.error("กรุณาระบุชื่อเมนู")
-        elif edited_recipe.empty:
-            st.error("กรุณากดปุ่ม (+) เพื่อเพิ่มส่วนผสม")
         else:
-            # กรองข้อมูลเอาเฉพาะแถวที่เลือกวัตถุดิบแล้ว
-            clean_df = edited_recipe.dropna(subset=["วัตถุดิบ"])
+            clean_df = edited_recipe.dropna()
             if not clean_df.empty:
                 new_dict = {row["วัตถุดิบ"]: float(row["ปริมาณ (g)"]) for _, row in clean_df.iterrows()}
                 st.session_state.recipes[new_menu_name] = new_dict
                 st.success(f"บันทึกสูตร {new_menu_name} เรียบร้อย!")
                 st.rerun()
             else:
-                st.error("กรุณาเลือกวัตถุดิบและใส่ปริมาณให้ครบถ้วน")
+                st.error("กรุณาเลือกวัตถุดิบในตาราง")
 
 # -----------------------
-# TAB 4: PRODUCTION
+# TAB 4: PRODUCTION (มีปุ่มเพิ่มลดเฉพาะจำนวนผลิต)
 # -----------------------
 with tab4:
     st.header("🏭 ระบบผลิต")
     menu_sel = st.selectbox("เลือกเมนู", list(st.session_state.recipes.keys()))
-    qty_sel = st.number_input("จำนวนที่ผลิต", min_value=1, value=1)
+    
+    # ส่วนนี้คงปุ่มเพิ่มลดไว้ตามต้องการ (มี step=1)
+    qty_sel = st.number_input("จำนวนที่ผลิต (ชุด)", min_value=1, value=1, step=1)
     
     if menu_sel:
         recipe = st.session_state.recipes[menu_sel]
@@ -171,6 +164,6 @@ with tab4:
                     "จำนวน": f"{qty_sel} สูตร", 
                     "ต้นทุนรวม (บาท)": cost
                 })
-                st.success("ผลิตและหักสต็อกสำเร็จ!")
+                st.success("ผลิตสำเร็จ!")
                 st.balloons()
                 st.rerun()
