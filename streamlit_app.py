@@ -68,6 +68,7 @@ with tab2:
     with st.expander("➕ เพิ่มวัตถุดิบใหม่"):
         with st.form("add_inv_form"):
             n = st.text_input("ชื่อวัตถุดิบ")
+            # step=None จะเอาปุ่มลูกศรออก บังคับให้พิมพ์เอง
             s = st.number_input("ปริมาณเริ่มต้น", min_value=0.0, step=None, value=100.0)
             u = st.text_input("หน่วย", value="g")
             p = st.number_input("ราคาต่อหน่วย", format="%.4f", step=None)
@@ -79,7 +80,7 @@ with tab2:
                     st.rerun()
 
 # -----------------------
-# TAB 3: RECIPES (ฉบับแก้ปัญหา TypeError)
+# TAB 3: RECIPES (จุดที่ต้องแก้ Error ในรูป)
 # -----------------------
 with tab3:
     st.header("🍪 จัดการสูตรอาหาร")
@@ -91,11 +92,11 @@ with tab3:
     st.divider()
     st.subheader("➕ สร้างสูตรใหม่")
     
-    new_menu_name = st.text_input("ชื่อเมนูใหม่", key="menu_name_reg")
+    new_menu_name = st.text_input("ชื่อเมนูใหม่", key="new_recipe_name")
     available_ing = st.session_state.inventory["name"].tolist()
     
-    # แก้จุดตาย: ใช้ตารางเปล่าที่มีค่าเป็น None ทั้งหมด เพื่อไม่ให้ระบบ Metric ตรวจสอบแล้ว Error
-    df_init = pd.DataFrame(columns=["วัตถุดิบ", "ปริมาณ (g)"])
+    # ใช้ตารางเริ่มต้นที่มีโครงสร้างชัดเจน และกำหนดปริมาณเริ่มต้นเป็น 0.0
+    df_init = pd.DataFrame([{"วัตถุดิบ": None, "ปริมาณ (g)": 0.0}])
 
     edited_recipe = st.data_editor(
         df_init,
@@ -104,42 +105,32 @@ with tab3:
             "วัตถุดิบ": st.column_config.SelectboxColumn(
                 "เลือกวัตถุดิบ", 
                 options=available_ing,
-                width="large",
-                required=True
+                width="large"
             ),
-            "ปริมาณ (g)": st.column_config.TextColumn(
+            "ปริมาณ (g)": st.column_config.NumberColumn(
                 "ปริมาณ (g)", 
-                placeholder="คลิกแล้วพิมพ์เลขที่นี่ (เช่น 150)",
-                required=True
+                min_value=0.0,
+                format="%.2f",
+                step=None  # ลบปุ่มบวกลบออก เพื่อให้พิมพ์เอง
             )
         },
         use_container_width=True,
-        key="recipe_editor_fixed_v7"
+        key="recipe_editor_stable_v9"
     )
 
     if st.button("💾 บันทึกสูตรอาหาร"):
         if not new_menu_name:
             st.error("กรุณาระบุชื่อเมนู")
-        elif edited_recipe.empty:
-            st.error("กรุณากดปุ่ม (+) เพื่อเพิ่มแถวส่วนผสม")
         else:
-            try:
-                # กรองแถวที่กรอกข้อมูลครบ
-                clean_df = edited_recipe.dropna()
-                if not clean_df.empty:
-                    new_dict = {}
-                    for _, row in clean_df.iterrows():
-                        # แปลงจาก Text เป็น Float
-                        val = float(str(row["ปริมาณ (g)"]).replace(',', '').strip())
-                        new_dict[row["วัตถุดิบ"]] = val
-                    
-                    st.session_state.recipes[new_menu_name] = new_dict
-                    st.success(f"บันทึกสูตร {new_menu_name} สำเร็จ!")
-                    st.rerun()
-                else:
-                    st.error("กรุณาเลือกวัตถุดิบและใส่ตัวเลขให้ครบถ้วน")
-            except ValueError:
-                st.error("❌ ในช่องปริมาณต้องพิมพ์เป็น 'ตัวเลข' เท่านั้น")
+            # กรองแถวที่ไม่ได้เลือกวัตถุดิบออก
+            clean_df = edited_recipe.dropna(subset=["วัตถุดิบ"])
+            if not clean_df.empty:
+                new_dict = {row["วัตถุดิบ"]: float(row["ปริมาณ (g)"]) for _, row in clean_df.iterrows()}
+                st.session_state.recipes[new_menu_name] = new_dict
+                st.success(f"บันทึกสูตร {new_menu_name} เรียบร้อย!")
+                st.rerun()
+            else:
+                st.error("กรุณาเลือกส่วนผสมและใส่ปริมาณ")
 
 # -----------------------
 # TAB 4: PRODUCTION
@@ -147,6 +138,8 @@ with tab3:
 with tab4:
     st.header("🏭 ระบบผลิต")
     menu_sel = st.selectbox("เลือกเมนู", list(st.session_state.recipes.keys()))
+    
+    # เฉพาะตรงนี้ที่มีปุ่มบวกลบ (step=1)
     qty_sel = st.number_input("จำนวนที่ผลิต (ชุด)", min_value=1, value=1, step=1)
     
     if menu_sel:
