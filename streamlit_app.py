@@ -59,7 +59,7 @@ with tab1:
         st.info("ยังไม่มีข้อมูลการผลิตในระบบ")
 
 # -----------------------
-# TAB 2: INVENTORY (พิมพ์ตัวเลขเอง ไม่มีปุ่มบวกลบ)
+# TAB 2: INVENTORY (พิมพ์ตัวเลขเอง)
 # -----------------------
 with tab2:
     st.header("📦 คลังวัตถุดิบ")
@@ -68,7 +68,6 @@ with tab2:
     with st.expander("➕ เพิ่มวัตถุดิบใหม่"):
         with st.form("add_inv_form"):
             n = st.text_input("ชื่อวัตถุดิบ")
-            # step=None จะเอาปุ่มลูกศรออก บังคับให้พิมพ์เอง
             s = st.number_input("ปริมาณเริ่มต้น", min_value=0.0, step=None, value=100.0)
             u = st.text_input("หน่วย", value="g")
             p = st.number_input("ราคาต่อหน่วย", format="%.4f", step=None)
@@ -80,7 +79,7 @@ with tab2:
                     st.rerun()
 
 # -----------------------
-# TAB 3: RECIPES (แก้ปัญหาพิมพ์ไม่ได้ และ TypeError)
+# TAB 3: RECIPES (ฉบับแก้ปัญหา TypeError)
 # -----------------------
 with tab3:
     st.header("🍪 จัดการสูตรอาหาร")
@@ -92,11 +91,11 @@ with tab3:
     st.divider()
     st.subheader("➕ สร้างสูตรใหม่")
     
-    new_menu_name = st.text_input("ชื่อเมนูใหม่", key="menu_name_unique")
+    new_menu_name = st.text_input("ชื่อเมนูใหม่", key="menu_name_reg")
     available_ing = st.session_state.inventory["name"].tolist()
     
-    # สำคัญ: ใช้ข้อความ "0" แทนตัวเลข เพื่อให้เข้ากับ TextColumn และไม่ Error
-    df_init = pd.DataFrame([{"วัตถุดิบ": None, "ปริมาณ (g)": "0"}])
+    # แก้จุดตาย: ใช้ตารางเปล่าที่มีค่าเป็น None ทั้งหมด เพื่อไม่ให้ระบบ Metric ตรวจสอบแล้ว Error
+    df_init = pd.DataFrame(columns=["วัตถุดิบ", "ปริมาณ (g)"])
 
     edited_recipe = st.data_editor(
         df_init,
@@ -105,28 +104,32 @@ with tab3:
             "วัตถุดิบ": st.column_config.SelectboxColumn(
                 "เลือกวัตถุดิบ", 
                 options=available_ing,
-                width="large"
+                width="large",
+                required=True
             ),
             "ปริมาณ (g)": st.column_config.TextColumn(
                 "ปริมาณ (g)", 
-                placeholder="คลิกแล้วพิมพ์เลขที่นี่"
+                placeholder="คลิกแล้วพิมพ์เลขที่นี่ (เช่น 150)",
+                required=True
             )
         },
         use_container_width=True,
-        key="recipe_editor_final_fix"
+        key="recipe_editor_fixed_v7"
     )
 
     if st.button("💾 บันทึกสูตรอาหาร"):
         if not new_menu_name:
             st.error("กรุณาระบุชื่อเมนู")
+        elif edited_recipe.empty:
+            st.error("กรุณากดปุ่ม (+) เพื่อเพิ่มแถวส่วนผสม")
         else:
             try:
-                # กรองแถวที่เลือกวัตถุดิบไว้
-                clean_df = edited_recipe.dropna(subset=["วัตถุดิบ"])
+                # กรองแถวที่กรอกข้อมูลครบ
+                clean_df = edited_recipe.dropna()
                 if not clean_df.empty:
                     new_dict = {}
                     for _, row in clean_df.iterrows():
-                        # แปลงข้อความเป็นตัวเลขตอนบันทึก
+                        # แปลงจาก Text เป็น Float
                         val = float(str(row["ปริมาณ (g)"]).replace(',', '').strip())
                         new_dict[row["วัตถุดิบ"]] = val
                     
@@ -134,18 +137,16 @@ with tab3:
                     st.success(f"บันทึกสูตร {new_menu_name} สำเร็จ!")
                     st.rerun()
                 else:
-                    st.error("กรุณาเลือกวัตถุดิบและใส่ปริมาณในตาราง")
+                    st.error("กรุณาเลือกวัตถุดิบและใส่ตัวเลขให้ครบถ้วน")
             except ValueError:
-                st.error("❌ ในช่องปริมาณต้องกรอกเป็น 'ตัวเลข' เท่านั้น (ห้ามใส่ตัวอักษร)")
+                st.error("❌ ในช่องปริมาณต้องพิมพ์เป็น 'ตัวเลข' เท่านั้น")
 
 # -----------------------
-# TAB 4: PRODUCTION (มีปุ่มบวกลบเฉพาะที่นี่)
+# TAB 4: PRODUCTION
 # -----------------------
 with tab4:
     st.header("🏭 ระบบผลิต")
     menu_sel = st.selectbox("เลือกเมนู", list(st.session_state.recipes.keys()))
-    
-    # ส่วนเดียวที่มีปุ่มกดบวก/ลบได้เพื่อความสะดวก
     qty_sel = st.number_input("จำนวนที่ผลิต (ชุด)", min_value=1, value=1, step=1)
     
     if menu_sel:
@@ -169,7 +170,6 @@ with tab4:
                 for ing, amt in recipe.items():
                     st.session_state.inventory.loc[st.session_state.inventory["name"] == ing, "stock"] -= (amt * qty_sel)
                 
-                # บันทึกประวัติพร้อม วัน/เดือน/ปี เวลา
                 timestamp = datetime.now().strftime("%d/%m/%Y %H:%M") 
                 st.session_state.history.append({
                     "วันที่-เวลา": timestamp,
