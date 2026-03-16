@@ -37,17 +37,15 @@ tab1, tab2, tab3, tab4 = st.tabs([
 ])
 
 # -----------------------
-# TAB 1: DASHBOARD (ตารางสรุปแบบไม่มีกราฟ)
+# TAB 1: DASHBOARD
 # -----------------------
 with tab1:
     st.header("📊 บทสรุปการผลิต")
     
     if st.session_state.history:
         df_hist = pd.DataFrame(st.session_state.history)
-        # แปลงคอลัมน์ต้นทุนให้เป็นตัวเลข
         df_hist["ต้นทุนรวม (บาท)"] = pd.to_numeric(df_hist["ต้นทุนรวม (บาท)"])
         
-        # --- ส่วนที่ 1: ตารางสรุปยอดสะสมตามเมนู ---
         st.subheader("📝 สรุปยอดสะสมรายเมนู")
         summary_df = df_hist.groupby("เมนู").agg({
             "เมนู": "count",
@@ -56,17 +54,11 @@ with tab1:
             "เมนู": "จำนวนครั้งที่ผลิต", 
             "ต้นทุนรวม (บาท)": "ต้นทุนสะสมรวม (บาท)"
         })
-        
-        # แสดงตารางสรุป
         st.table(summary_df)
 
         st.divider()
-
-        # --- ส่วนที่ 2: ประวัติการบันทึกรายครั้ง (Log) ---
         st.subheader("📜 ประวัติการผลิตรายครั้ง")
-        # แสดงผลแบบ DataFrame เพื่อให้เลื่อนดูได้และดูสวยงาม
         st.dataframe(df_hist.iloc[::-1], use_container_width=True)
-        
     else:
         st.info("ยังไม่มีข้อมูลการผลิตในระบบ")
 
@@ -80,9 +72,9 @@ with tab2:
     with st.expander("➕ เพิ่มวัตถุดิบใหม่"):
         with st.form("add_inv_form"):
             n = st.text_input("ชื่อวัตถุดิบ")
-            s = st.number_input("ปริมาณเริ่มต้น", min_value=0.0)
-            u = st.text_input("หน่วย (g/ml/pcs)")
-            p = st.number_input("ราคาต่อหน่วย")
+            s = st.number_input("ปริมาณเริ่มต้น", min_value=0.0, value=100.0)
+            u = st.text_input("หน่วย (g/ml/pcs)", value="g")
+            p = st.number_input("ราคาต่อหน่วย", format="%.4f")
             if st.form_submit_button("บันทึก"):
                 if n:
                     new_item = pd.DataFrame([{"name":n, "stock":s, "unit":u, "price":p}])
@@ -90,7 +82,7 @@ with tab2:
                     st.rerun()
 
 # -----------------------
-# TAB 3: RECIPES (เพิ่มส่วนผสมได้ไม่จำกัด)
+# TAB 3: RECIPES (แก้ปัญหาการกรอกตัวเลข)
 # -----------------------
 with tab3:
     st.header("🍪 จัดการสูตรอาหาร")
@@ -99,29 +91,50 @@ with tab3:
             for i, q in r_ing.items():
                 st.write(f"- {i}: {q} g")
     
-    st.subheader("➕ สร้างสูตรใหม่ (เพิ่มส่วนผสมได้ไม่จำกัด)")
-    new_menu_name = st.text_input("ชื่อเมนูใหม่")
-    available_ing = st.session_state.inventory["name"].tolist()
-    df_template = pd.DataFrame(columns=["วัตถุดิบ", "ปริมาณ (g)"])
+    st.divider()
+    st.subheader("➕ สร้างสูตรใหม่")
     
+    new_menu_name = st.text_input("ชื่อเมนูใหม่", placeholder="เช่น คุกกี้เนยสด")
+    
+    available_ing = st.session_state.inventory["name"].tolist()
+    
+    # ใช้ตารางว่างเพื่อให้ผู้ใช้กด (+) เพิ่มเอง จะช่วยลดปัญหาเลขค้าง
     edited_recipe = st.data_editor(
-        df_template,
+        pd.DataFrame(columns=["วัตถุดิบ", "ปริมาณ (g)"]),
         num_rows="dynamic",
         column_config={
-            "วัตถุดิบ": st.column_config.SelectboxColumn("เลือกวัตถุดิบ", options=available_ing, required=True),
-            "ปริมาณ (g)": st.column_config.NumberColumn("ปริมาณ", min_value=0.1, required=True)
+            "วัตถุดิบ": st.column_config.SelectboxColumn(
+                "เลือกวัตถุดิบ", 
+                options=available_ing, 
+                required=True
+            ),
+            "ปริมาณ (g)": st.column_config.NumberColumn(
+                "ปริมาณ", 
+                min_value=0.01, 
+                format="%.2f",
+                step=0.1,
+                required=True
+            )
         },
         use_container_width=True,
-        key="recipe_editor"
+        key="recipe_editor_final"
     )
 
     if st.button("💾 บันทึกสูตร"):
-        if new_menu_name and not edited_recipe.empty:
-            # ดึงข้อมูลจาก editor มาสร้าง Dictionary
-            new_recipe_dict = {row["วัตถุดิบ"]: row["ปริมาณ (g)"] for _, row in edited_recipe.iterrows() if pd.notnull(row["วัตถุดิบ"])}
-            st.session_state.recipes[new_menu_name] = new_recipe_dict
-            st.success(f"บันทึกสูตร '{new_menu_name}' เรียบร้อย")
-            st.rerun()
+        if not new_menu_name:
+            st.error("กรุณาระบุชื่อเมนู")
+        elif edited_recipe.empty:
+            st.error("กรุณากดปุ่ม (+) ในตารางเพื่อเพิ่มส่วนผสม")
+        else:
+            # กรองข้อมูลและบันทึก
+            recipe_data = edited_recipe.dropna()
+            if not recipe_data.empty:
+                new_dict = {row["วัตถุดิบ"]: float(row["ปริมาณ (g)"]) for _, row in recipe_data.iterrows()}
+                st.session_state.recipes[new_menu_name] = new_dict
+                st.success(f"บันทึกสูตร {new_menu_name} สำเร็จ!")
+                st.rerun()
+            else:
+                st.error("กรุณากรอกข้อมูลส่วนผสมให้ครบถ้วน")
 
 # -----------------------
 # TAB 4: PRODUCTION
@@ -129,7 +142,7 @@ with tab3:
 with tab4:
     st.header("🏭 ระบบผลิต")
     menu_sel = st.selectbox("เลือกเมนูที่จะผลิต", list(st.session_state.recipes.keys()))
-    qty_sel = st.number_input("จำนวนที่ผลิต (สูตร)", min_value=1)
+    qty_sel = st.number_input("จำนวนที่ผลิต (สูตร)", min_value=1, value=1)
     
     if menu_sel:
         recipe = st.session_state.recipes[menu_sel]
@@ -149,11 +162,9 @@ with tab4:
         
         if st.button("🚀 ยืนยันการผลิต"):
             if can_make:
-                # หักสต็อก
                 for ing, amt in recipe.items():
                     st.session_state.inventory.loc[st.session_state.inventory["name"] == ing, "stock"] -= (amt * qty_sel)
                 
-                # บันทึกประวัติ
                 timestamp = datetime.now().strftime("%d/%m/%Y %H:%M") 
                 st.session_state.history.append({
                     "วันที่-เวลา": timestamp,
